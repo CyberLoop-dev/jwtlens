@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jwtlens · decode JWTs locally</title>
+<style>
+  :root { --bg:#160f0a; --card:#21160e; --line:#3d2a1c; --text:#f5e9df; --mute:#b39a86; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .wrap { max-width:860px; margin:0 auto; padding:28px 18px 60px; }
+  h1 { margin:0; font-size:30px; background:linear-gradient(90deg,#fb923c,#ef4444); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  p.sub { color:var(--mute); margin:4px 0 18px; }
+  textarea { width:100%; height:120px; background:var(--card); color:var(--text); border:1px solid var(--line); border-radius:12px; padding:12px; font:13px ui-monospace,Menlo,monospace; word-break:break-all; resize:vertical; }
+  textarea:focus { outline:none; border-color:#fb923c; }
+  button { background:var(--card); color:var(--text); border:1px solid var(--line); border-radius:999px; padding:7px 16px; cursor:pointer; font-size:13px; margin:10px 8px 10px 0; }
+  button:hover { border-color:#fb923c; }
+  .badge { display:inline-block; padding:5px 14px; border-radius:999px; font-weight:700; font-size:13px; margin:6px 8px 6px 0; }
+  .ok { background:#16a34a33; color:#86efac; } .bad { background:#ef444433; color:#fca5a5; } .warn { background:#eab30833; color:#fde047; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:12px; margin:14px 0; overflow:hidden; }
+  .panel h2 { margin:0; padding:9px 14px; font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); border-bottom:1px solid var(--line); }
+  pre { margin:0; padding:12px 14px; font:13px/1.55 ui-monospace,Menlo,monospace; white-space:pre-wrap; word-break:break-word; }
+  .claims { padding:8px 14px 12px; }
+  .claim { display:flex; gap:12px; padding:4px 0; font-size:14px; }
+  .claim b { min-width:48px; color:#fb923c; }
+  .claim span { color:var(--mute); }
+  .err { color:#fca5a5; padding:10px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>jwtlens</h1>
+  <p class="sub">Paste a JWT to decode it. Runs entirely in your browser. The token is never sent anywhere.</p>
+
+  <textarea id="tok" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." spellcheck="false"></textarea>
+  <div><button id="sample">Load sample</button><button id="clear">Clear</button></div>
+
+  <div id="flags"></div>
+  <div id="result"></div>
+  <p class="sub">jwtlens only decodes. It does not verify the signature, so never trust a token just because it decodes.</p>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let expAt = null;
+
+function b64urlToText(s) {
+  s = s.replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  const bin = atob(s);
+  const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+function textToB64url(t) {
+  const bytes = new TextEncoder().encode(t);
+  let bin = ""; bytes.forEach(b => bin += String.fromCharCode(b));
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function human(sec) {
+  const abs = Math.abs(sec);
+  const d = Math.floor(abs / 86400), h = Math.floor(abs % 86400 / 3600), m = Math.floor(abs % 3600 / 60), s = abs % 60;
+  const parts = [];
+  if (d) parts.push(d + "d"); if (h) parts.push(h + "h"); if (m) parts.push(m + "m");
+  if (!d) parts.push(s + "s");
+  return parts.join(" ");
+}
+
+function badge(text, cls) {
+  const b = document.createElement("span"); b.className = "badge " + cls; b.textContent = text; return b;
+}
+function panel(title, body) {
+  const p = document.createElement("div"); p.className = "panel";
+  const h = document.createElement("h2"); h.textContent = title;
+  p.append(h, body); return p;
+}
+
+function updateExpiry() {
+  const el = $("expiry"); if (!el || expAt === null) return;
+  const diff = expAt - Math.floor(Date.now() / 1000);
+  el.className = "badge " + (diff < 0 ? "bad" : diff < 300 ? "warn" : "ok");
+  el.textContent = diff < 0 ? "Expired " + human(diff) + " ago" : "Expires in " + human(diff);
+}
+
+function render() {
+  const raw = $("tok").value.trim().replace(/^Bearer\s+/i, "");
+  const flags = $("flags"), out = $("result");
+  flags.replaceChildren(); out.replaceChildren(); expAt = null;
+  if (!raw) return;
+
+  const parts = raw.split(".");
+  if (parts.length < 2) { const e = document.createElement("div"); e.className = "err"; e.textContent = "That does not look like a JWT (expected header.payload.signature)."; out.append(e); return; }
+
+  let header, payload;
+  try { header = JSON.parse(b64urlToText(parts[0])); payload = JSON.parse(b64urlToText(parts[1])); }
+  catch (e) { const d = document.createElement("div"); d.className = "err"; d.textContent = "Could not decode: the header or payload is not valid base64url JSON."; out.append(d); return; }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (typeof payload.exp === "number") {
+    expAt = payload.exp;
+    const b = badge("", "ok"); b.id = "expiry"; flags.append(b); updateExpiry();
+  } else flags.append(badge("No exp claim: token never expires", "warn"));
+  if (typeof payload.nbf === "number" && payload.nbf > now) flags.append(badge("Not valid yet (nbf in the future)", "warn"));
+  if (String(header.alg).toLowerCase() === "none") flags.append(badge("alg is none: unsigned token!", "bad"));
+  if (parts.length < 3 || !parts[2]) flags.append(badge("No signature present", "bad"));
+
+  const pre = (obj) => { const p = document.createElement("pre"); p.textContent = JSON.stringify(obj, null, 2); return p; };
+  out.append(panel("Header", pre(header)), panel("Payload", pre(payload)));
+
+  const claims = document.createElement("div"); claims.className = "claims";
+  [["iat", "issued at"], ["nbf", "not before"], ["exp", "expires"]].forEach(([k, label]) => {
+    if (typeof payload[k] !== "number") return;
+    const row = document.createElement("div"); row.className = "claim";
+    const key = document.createElement("b"); key.textContent = k;
+    const val = document.createElement("span");
+    const dt = new Date(payload[k] * 1000);
+    val.textContent = label + ": " + dt.toLocaleString() + "  (" + dt.toISOString() + ")";
+    row.append(key, val); claims.append(row);
+  });
+  if (claims.children.length) out.append(panel("Time claims", claims));
+}
+
+$("tok").addEventListener("input", render);
+$("clear").onclick = () => { $("tok").value = ""; render(); };
+$("sample").onclick = () => {
+  const now = Math.floor(Date.now() / 1000);
+  const h = textToB64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const p = textToB64url(JSON.stringify({ sub: "1234567890", name: "Ada Lovelace", iat: now, exp: now + 3600 }));
+  $("tok").value = h + "." + p + ".c2FtcGxlLXNpZ25hdHVyZQ";
+  render();
+};
+setInterval(updateExpiry, 1000);
+</script>
+</body>
+</html>
