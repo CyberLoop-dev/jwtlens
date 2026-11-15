@@ -11,17 +11,17 @@
 
 **jwtlens** decodes JSON Web Tokens right in your browser. Paste a token, get a pretty header and payload, readable dates and a live expiry countdown. No server, no uploads, no tracking.
 
-## Why local matters
+## 💡 Why local matters
 
 Tokens are credentials. Pasting them into random websites is a bad habit. jwtlens is one HTML file that never makes a network request, so you can read it, audit it and run it offline.
 
-## Use it
+## 📌 Use it
 
 1. Open `index.html` in your browser.
 2. Paste a token (a leading `Bearer ` is fine).
 3. Read the result.
 
-## What you see
+## 📌 What you see
 
 - Pretty-printed **header** and **payload**
 - `iat`, `nbf` and `exp` as local time and ISO 8601
@@ -33,10 +33,10 @@ Tokens are credentials. Pasting them into random websites is a bad habit. jwtlen
   - `nbf` in the future
 - Proper UTF-8 handling, so non-English claims decode correctly
 
-## Important
+## 📌 Important
 
 jwtlens **decodes only**. It does not verify signatures, because that needs your secret or public key. A token that decodes is not a token you can trust.
 
-## License
+## 📄 License
 
 MIT
